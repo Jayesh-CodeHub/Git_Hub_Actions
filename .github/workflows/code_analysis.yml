@@ -1,0 +1,74 @@
+name: Code Quality Analysis
+
+on:
+  push:
+    branches:
+      - '**'  # Runs on any branch where a ZIP file is pushed
+    paths:
+      - '**.zip'  # Trigger only if a zip file is pushed
+
+jobs:
+  linting:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y unzip shellcheck
+          pip install pylint
+          pwsh -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser"
+          pip install ansible-lint
+
+      - name: Find and unzip the latest zip file
+        run: |
+          ZIP_FILE=$(ls -t *.zip | head -n1)
+          echo "Extracting $ZIP_FILE"
+          unzip "$ZIP_FILE" -d extracted_files
+        shell: bash
+
+      - name: Run linters and save reports with timestamps
+        run: |
+          mkdir -p lint_reports
+          TIMESTAMP=$(date +'%Y-%m-%d_%H-%M-%S')
+
+          # Python Linting
+          if ls extracted_files/*.py 1> /dev/null 2>&1; then
+            echo "Running pylint on Python files..."
+            pylint extracted_files/*.py | tee "lint_reports/python_lint_$TIMESTAMP.txt"
+          fi
+
+          # PowerShell Linting
+          if ls extracted_files/*.ps1 1> /dev/null 2>&1; then
+            echo "Running PSScriptAnalyzer on PowerShell files..."
+            pwsh -Command "Get-ChildItem extracted_files/*.ps1 | ForEach-Object { Invoke-ScriptAnalyzer -Path \$_ -Recurse }" | tee "lint_reports/powershell_lint_$TIMESTAMP.txt"
+          fi
+
+          # Shell Script Linting
+          if ls extracted_files/*.sh 1> /dev/null 2>&1; then
+            echo "Running ShellCheck on shell scripts..."
+            shellcheck extracted_files/*.sh | tee "lint_reports/shell_lint_$TIMESTAMP.txt"
+          fi
+
+          # Ansible Linting
+          if ls extracted_files/*.yml 1> /dev/null 2>&1; then
+            echo "Running ansible-lint on Ansible playbooks..."
+            ansible-lint extracted_files/*.yml | tee "lint_reports/ansible_lint_$TIMESTAMP.txt"
+          fi
+        shell: bash
+
+      - name: Commit and push linting reports
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)  # Get current branch name
+          git pull --rebase origin "$BRANCH"  # Ensure latest branch changes are fetched
+
+          git add lint_reports/*
+          git commit -m "Added new linting report - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+          git push origin "$BRANCH"
+        continue-on-error: true
