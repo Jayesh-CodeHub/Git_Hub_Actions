@@ -7,6 +7,9 @@ on:
     paths:
       - '**.zip'  # Trigger only if a zip file is pushed
 
+permissions:
+  contents: write  # Required for committing reports
+
 jobs:
   linting:
     runs-on: ubuntu-latest
@@ -44,7 +47,11 @@ jobs:
           # PowerShell Linting
           if ls extracted_files/*.ps1 1> /dev/null 2>&1; then
             echo "Running PSScriptAnalyzer on PowerShell files..."
-            pwsh -Command "Get-ChildItem extracted_files/*.ps1 | ForEach-Object { Invoke-ScriptAnalyzer -Path \$_ -Recurse }" | tee "lint_reports/powershell_lint_$TIMESTAMP.txt"
+            pwsh -Command "
+              Get-ChildItem extracted_files/*.ps1 | ForEach-Object {
+                Invoke-ScriptAnalyzer -Path $_.FullName -Recurse -Verbose
+              }
+            " | tee "lint_reports/powershell_lint_$TIMESTAMP.txt"
           fi
 
           # Shell Script Linting
@@ -69,6 +76,10 @@ jobs:
           git pull --rebase origin "$BRANCH"  # Ensure latest branch changes are fetched
 
           git add lint_reports/*
-          git commit -m "Added new linting report - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
-          git push origin "$BRANCH"
-        continue-on-error: true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Added new linting report - $(date +'%Y-%m-%d %H:%M:%S')"
+            git push origin "$BRANCH"
+          fi
+        shell: bash
