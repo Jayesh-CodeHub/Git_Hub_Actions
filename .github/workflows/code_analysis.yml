@@ -65,6 +65,9 @@ jobs:
             echo "Running ansible-lint on Ansible playbooks..."
             ansible-lint extracted_files/*.yml | tee "lint_reports/ansible_lint_$TIMESTAMP.txt"
           fi
+
+          # Ensure lint_reports folder is not empty
+          touch lint_reports/.gitkeep
         shell: bash
 
       - name: Commit and push linting reports
@@ -75,11 +78,12 @@ jobs:
           BRANCH=$(git rev-parse --abbrev-ref HEAD)  # Get current branch name
           git pull --rebase origin "$BRANCH"  # Ensure latest branch changes are fetched
 
-          git add lint_reports/*
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
+          # Only add and commit if there are linting reports
+          if [ -n "$(ls -A lint_reports/*.txt 2>/dev/null)" ]; then
+            git add lint_reports/*
             git commit -m "Added new linting report - $(date +'%Y-%m-%d %H:%M:%S')"
             git push origin "$BRANCH"
+          else
+            echo "No linting reports generated. Skipping commit."
           fi
         shell: bash
